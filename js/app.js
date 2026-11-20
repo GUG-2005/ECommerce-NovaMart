@@ -138,6 +138,96 @@ $(function () {
     if(isAdmin && !$("#adminPage").attr("hidden"))renderAdmin();
     if(user)loadOrders();
   }
+  function adminShell() {
+    return `<div class="admin-tabs">${["overview","products","categories","orders","customers","inventory","reports"].map(t=>`<button class="tab ${adminTab===t?"active":""}" data-admin-tab="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}</div><div id="adminPanel"></div>`;
+  }
+  async function renderAdmin() {
+    if(!isAdmin){$("#adminContent").html('<div class="empty-state">Administrator access is required.</div>');return;}
+    $("#adminContent").html(adminShell());const panel=$("#adminPanel");
+    if(adminTab==="overview"){
+      const [ps,cs,os,us]=await Promise.all([db.collection("products").get(),db.collection("categories").get(),db.collection("orders").get(),db.collection("users").where("role","==","customer").get()]);
+      const revenue=os.docs.reduce((s,d)=>s+Number(d.data().total||0),0);
+      panel.html(`<div class="stats-grid"><div class="stat"><small>Products</small><strong>${ps.size}</strong></div><div class="stat"><small>Categories</small><strong>${cs.size}</strong></div><div class="stat"><small>Customers</small><strong>${us.size}</strong></div><div class="stat"><small>Order value</small><strong>${money(revenue)}</strong></div></div><h3>Quick actions</h3><p class="muted">Manage your catalogue, stock, customers and sales reports using the tabs above.</p>`);
+    } else if(adminTab==="products") await adminProducts(panel);
+    else if(adminTab==="categories") await adminCategories(panel);
+    else if(adminTab==="orders") await adminOrders(panel);
+    else if(adminTab==="customers") await adminCustomers(panel);
+    else if(adminTab==="inventory") await adminInventory(panel);
+    else if(adminTab==="reports") await adminReports(panel);
+  }
+  async function adminProducts(panel) {
+    const snap=await db.collection("products").get(),rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const catOpts=categories.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+    panel.html(`<h3 id="productFormTitle">Create product</h3><form id="productForm" class="form-grid">
+      <label>Product title<input name="title" required maxlength="100"></label><label>Category<select name="categoryId" required>${catOpts}</select></label>
+      <label>Price (₹)<input name="price" type="number" min="0.01" step="0.01" required></label><label>Quantity<input name="quantity" type="number" min="0" step="1" required></label>
+      <label class="wide">Description<textarea name="description" rows="2"></textarea></label><label class="wide">Image URL (optional)<input name="imageUrl" type="url"></label>
+      <label>Active<select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></label><div><button class="btn btn-primary" type="submit">Save product</button> <button class="btn btn-light" type="button" id="cancelProductEdit">Clear</button></div></form>
+      <h3 style="margin-top:30px">Product catalogue</h3><div class="table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map(p=>`<tr><td>${esc(p.title)}</td><td>${esc(categories.find(c=>c.id===p.categoryId)?.name||"—")}</td><td>${money(p.price)}</td><td>${p.quantity}</td><td>${p.active?"Active":"Inactive"}</td><td><button class="btn btn-light edit-product" data-id="${esc(p.id)}">Edit</button> <button class="btn btn-danger delete-product" data-id="${esc(p.id)}">Delete</button></td></tr>`).join("")||'<tr><td colspan="6">No products yet.</td></tr>'}</tbody></table></div>`);
+    $("#productForm").on("submit",async function(e){e.preventDefault();const v=Object.fromEntries(new FormData(this));const data={title:v.title.trim(),categoryId:v.categoryId,price:Number(v.price),quantity:Number(v.quantity),description:v.description,imageUrl:v.imageUrl,active:v.active==="true",updatedAt:firebase.firestore.FieldValue.serverTimestamp()};try{if(editingProductId)await db.collection("products").doc(editingProductId).update(data);else await db.collection("products").add({...data,createdAt:firebase.firestore.FieldValue.serverTimestamp()});editingProductId=null;toast("Product saved.");await loadProducts();await renderAdmin();}catch(e){toast(e.message);}});
+    $("#cancelProductEdit").on("click",()=>{editingProductId=null;renderAdmin();});
+    $(".edit-product").on("click",async function(){const id=$(this).data("id"),p=rows.find(x=>x.id===id);editingProductId=id;Object.entries(p).forEach(([k,v])=>$("#productForm [name='"+k+"']").val(v===true?"true":v===false?"false":v));$("#productFormTitle").text("Update product");window.scrollTo({top:0,behavior:"smooth"});});
+    $(".delete-product").on("click",async function(){const id=$(this).data("id");if(!confirm("Delete this product? This cannot be undone."))return;try{await db.collection("products").doc(id).delete();toast("Product deleted.");await loadProducts();await renderAdmin();}catch(e){toast(e.message);}});
+  }
+  async function adminCategories(panel) {
+    const snap=await db.collection("categories").get(),rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    panel.html(`<h3>Create category</h3><form id="categoryForm" class="form-grid"><label>Category name<input name="name" required maxlength="60"></label><div><button class="btn btn-primary">Add category</button></div></form><h3 style="margin-top:28px">Categories</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Actions</th></tr></thead><tbody>${rows.map(c=>`<tr><td>${esc(c.id)}</td><td>${esc(c.name)}</td><td><button class="btn btn-light edit-category" data-id="${esc(c.id)}">Rename</button> <button class="btn btn-danger delete-category" data-id="${esc(c.id)}">Delete</button></td></tr>`).join("")||'<tr><td colspan="3">No categories yet.</td></tr>'}</tbody></table></div>`);
+    $("#categoryForm").on("submit",async e=>{e.preventDefault();try{await db.collection("categories").add({name:$("#categoryForm [name=name]").val().trim(),createdAt:firebase.firestore.FieldValue.serverTimestamp()});toast("Category created.");await loadCategories();renderAdmin();}catch(e){toast(e.message);}});
+    $(".edit-category").on("click",async function(){const id=$(this).data("id"),old=rows.find(x=>x.id===id).name,name=prompt("New category name:",old);if(!name||!name.trim())return;await db.collection("categories").doc(id).update({name:name.trim()});await loadCategories();renderAdmin();});
+    $(".delete-category").on("click",async function(){const id=$(this).data("id");if(!confirm("Delete this category? Products in it will need reassignment."))return;await db.collection("categories").doc(id).delete();await loadCategories();renderAdmin();});
+  }
+  async function adminOrders(panel) {
+    const snap = await db.collection("orders").get();
+    const rows = snap.docs.map(d => ({id:d.id, ...d.data()}))
+      .sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    const allowed = ["Placed", "Processing", "Shipped", "Delivered", "Cancelled"];
+    panel.html(`<div class="section-head" style="margin-top:0"><div><p class="eyebrow">FULFILLMENT</p><h3>Customer orders</h3></div><span class="pill">${rows.length} total</span></div>
+      <p class="muted">Review purchases, update fulfillment status and print bills. Cancelling an order changes its status only; it does not restock items or issue refunds automatically.</p>
+      <div class="table-wrap"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      ${rows.map(o=>`<tr><td title="${esc(o.id)}">${esc(o.id.slice(0,10))}</td><td>${esc(o.customerName||o.customerEmail||"Customer")}</td><td>${moneyDate(o.createdAt)}</td>
+      <td>${(o.items||[]).reduce((s,i)=>s+Number(i.qty||0),0)}</td><td>${money(o.total)}</td><td>${esc(o.paymentMethod||"—")}</td>
+      <td><select class="order-status" data-id="${esc(o.id)}">${allowed.map(s=>`<option value="${s}" ${o.status===s?"selected":""}>${s}</option>`).join("")}</select></td>
+      <td><button class="btn btn-light admin-bill" data-id="${esc(o.id)}">Bill</button></td></tr>`).join("")||'<tr><td colspan="8">No orders yet.</td></tr>'}
+      </tbody></table></div>`);
+    panel.find(".order-status").on("change",async function(){
+      const sel=$(this),id=sel.data("id"),status=sel.val(),previous=rows.find(o=>o.id===id)?.status||"Placed";
+      sel.prop("disabled",true);
+      try{await db.collection("orders").doc(id).update({status,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});toast("Order status updated.");}
+      catch(e){sel.val(previous);toast(e.message);}
+      finally{sel.prop("disabled",false);}
+    });
+    panel.find(".admin-bill").on("click",function(){const order=rows.find(o=>o.id===$(this).data("id"));if(order)showBill(order);});
+  }
+
+  async function adminCustomers(panel) {
+    const snap=await db.collection("users").where("role","==","customer").get(),rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    panel.html(`<h3>Customer credit limits</h3><p class="muted">Set a customer's credit limit. Available credit = limit − credit already used.</p><div class="table-wrap"><table><thead><tr><th>Customer</th><th>Email</th><th>Mobile</th><th>Credit limit</th><th>Used</th><th>Available</th><th>Update</th></tr></thead><tbody>${rows.map(u=>`<tr><td>${esc(u.name||"—")}</td><td>${esc(u.email)}</td><td>${esc(u.mobile||"—")}</td><td>${money(u.creditLimit)}</td><td>${money(u.creditUsed)}</td><td>${money(Number(u.creditLimit||0)-Number(u.creditUsed||0))}</td><td><button class="btn btn-light credit-edit" data-id="${esc(u.id)}">Set limit</button></td></tr>`).join("")||'<tr><td colspan="7">No customers found.</td></tr>'}</tbody></table></div>`);
+    $(".credit-edit").on("click",async function(){const u=rows.find(x=>x.id===$(this).data("id"));const n=prompt("Enter new credit limit (₹):",u.creditLimit||0);if(n===null||!Number.isFinite(Number(n))||Number(n)<0){toast("Enter a valid non-negative amount.");return;}try{await db.collection("users").doc(u.id).update({creditLimit:Number(n)});toast("Credit limit updated.");renderAdmin();}catch(e){toast(e.message);}});
+  }
+  async function adminInventory(panel) {
+    const snap=await db.collection("products").get(),rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    panel.html(`<h3>Current inventory</h3><p class="muted">High stock: more than 100 units · Low stock: fewer than 15 units.</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Quantity</th><th>Stock status</th></tr></thead><tbody>${rows.map(p=>`<tr><td>${esc(p.title)}</td><td>${esc(categories.find(c=>c.id===p.categoryId)?.name||"—")}</td><td>${p.quantity}</td><td>${p.quantity>100?'<span class="pill">High stock</span>':p.quantity<15?'<span class="pill" style="background:#fff0f1;color:#c43e4d">Low stock</span>':'Normal'}</td></tr>`).join("")||'<tr><td colspan="4">No products found.</td></tr>'}</tbody></table></div>`);
+  }
+  async function adminReports(panel) {
+    const [os,ps,us]=await Promise.all([db.collection("orders").get(),db.collection("products").get(),db.collection("users").where("role","==","customer").get()]);
+    const orders=os.docs.map(d=>({id:d.id,...d.data()})),prods=ps.docs.map(d=>({id:d.id,...d.data()}));
+    panel.html(`<h3>Reports</h3><div class="form-grid"><label>From date<input type="date" id="reportFrom"></label><label>To date<input type="date" id="reportTo"></label><div><button class="btn btn-primary" id="runReport">Generate report</button></div></div><div id="reportResult" style="margin-top:20px"></div>`);
+    $("#runReport").on("click",()=>{
+      const from=$("#reportFrom").val(),to=$("#reportTo").val();if(!from||!to||from>to){toast("Choose a valid date range.");return;}
+      const start=asDate(from),end=asDate(to);end.setDate(end.getDate()+1);
+      const filtered=orders.filter(o=>{const d=o.createdAt?.toDate?o.createdAt.toDate():new Date(o.createdAt||0);return d>=start&&d<end;});
+      const total=filtered.reduce((s,o)=>s+Number(o.total||0),0),cash=filtered.filter(o=>o.paymentMethod==="cash"),credit=filtered.filter(o=>o.paymentMethod==="credit");
+      const byProduct={};filtered.forEach(o=>(o.items||[]).forEach(i=>{byProduct[i.title]=(byProduct[i.title]||0)+Number(i.qty||0);}));
+      const ranked=Object.entries(byProduct).sort((a,b)=>b[1]-a[1]);
+      const customerTotals={};filtered.forEach(o=>customerTotals[o.customerId]=(customerTotals[o.customerId]||0)+Number(o.total||0));
+      const topCustomers=Object.entries(customerTotals).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      $("#reportResult").html(`<div class="stats-grid"><div class="stat"><small>Orders</small><strong>${filtered.length}</strong></div><div class="stat"><small>Total sales</small><strong>${money(total)}</strong></div><div class="stat"><small>Cash sales</small><strong>${money(cash.reduce((s,o)=>s+o.total,0))}</strong></div><div class="stat"><small>Credit sales</small><strong>${money(credit.reduce((s,o)=>s+o.total,0))}</strong></div></div>
+        <h4>Top 10 selling products</h4>${rankTable(ranked.slice(0,10))}<h4>Bottom 10 selling products</h4>${rankTable(ranked.slice(-10).reverse())}
+        <h4>Top 10 customers</h4><div class="table-wrap"><table><thead><tr><th>Customer</th><th>Purchase value</th></tr></thead><tbody>${topCustomers.map(([id,v])=>`<tr><td>${esc(orders.find(o=>o.customerId===id)?.customerName||id)}</td><td>${money(v)}</td></tr>`).join("")||'<tr><td colspan="2">No sales in this period.</td></tr>'}</tbody></table></div>
+        <p class="muted">Inventory summary is available in the Inventory tab. Customer report values are calculated from orders in the selected date range.</p>`);
+    });
+    function rankTable(rows){return `<div class="table-wrap"><table><thead><tr><th>Product</th><th>Units sold</th></tr></thead><tbody>${rows.map(([n,v])=>`<tr><td>${esc(n)}</td><td>${v}</td></tr>`).join("")||'<tr><td colspan="2">No sales in this period.</td></tr>'}</tbody></table></div>`;}
+  }
 
   //Events
   $("nav a,.brand").on("click",function(e){e.preventDefault();const p=$(this).data("page");if(p==="admin"&&!isAdmin){toast("Administrator access required.");return;}if(p==="admin"){showPage("admin");renderAdmin();}else if(p==="orders"){showPage("orders");loadOrders();}else showPage("shop");});

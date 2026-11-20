@@ -58,10 +58,39 @@
         <button class="btn btn-primary full" id="checkoutButton">Continue to checkout</button>
       </aside></div>
     </section>
-
+    <section id="adminPage" class="page" hidden>
+      <div class="section-head"><div><p class="eyebrow">CONTROL CENTRE</p><h2>Admin dashboard</h2></div><span class="pill">Administrator</span></div>
+      <div class="admin-tabs">
+        <button class="tab active" data-admin-tab="overview">Overview</button>
+        <button class="tab" data-admin-tab="products">Products</button>
+        <button class="tab" data-admin-tab="categories">Categories</button>
+        <button class="tab" data-admin-tab="customers">Customers & credit</button>
+        <button class="tab" data-admin-tab="orders">Orders</button>
+        <button class="tab" data-admin-tab="inventory">Inventory</button>
+        <button class="tab" data-admin-tab="reports">Reports</button>
+      </div>
+      <div id="adminContent" class="panel"><p>Loading administrator tools...</p></div>
+    </section>
   </main>  
   <footer><span>NovaMart</span><span>Online Shopping </span></footer>
+    <div class="modal-backdrop" id="authModal" hidden><div class="modal">
+    <button class="modal-close" data-close="authModal">×</button><p class="eyebrow">WELCOME</p><h2 id="authTitle">Sign in</h2>
+    <form id="authForm"><label>Email<input type="email" id="authEmail" required></label>
+      <label>Password<input type="password" id="authPassword" minlength="6" required></label>
+      <label id="nameField" hidden>Full name<input type="text" id="authName"></label>
+      <label id="mobileField" hidden>Mobile number<input type="tel" id="authMobile"></label>
+      <button class="btn btn-primary full" type="submit" id="authSubmit">Sign in</button></form>
+    <div class="auth-links"><button class="link-btn" id="toggleAuth">Create an account</button><button class="link-btn" id="resetPassword">Forgot password?</button></div>
+  </div></div>
 
+  <div class="modal-backdrop" id="checkoutModal" hidden><div class="modal">
+    <button class="modal-close" data-close="checkoutModal">×</button><p class="eyebrow">FINAL STEP</p><h2>Checkout</h2>
+    <div id="checkoutDetails"></div>
+    <form id="checkoutForm"><label>Payment method<select id="paymentMethod"><option value="cash">Cash</option><option value="credit">Credit</option></select></label>
+      <p id="creditHint" class="muted"></p><button class="btn btn-primary full" type="submit">Place order</button></form>
+  </div></div>
+
+  <div class="toast" id="toast" role="status"></div>
    <script src="shared/firebase-config.js"></script>
   <script src="js/app.js"></script>
 </body>
