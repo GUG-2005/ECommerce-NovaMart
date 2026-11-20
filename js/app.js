@@ -74,6 +74,70 @@ $(function () {
     if(found)found.qty=next;else cart.push({id,qty:1,title:p.title,price:p.price});
     renderCart();toast("Added to cart.");
   }
+  async function loadOrders() {
+    if(!currentUser){$("#ordersList").html('<p class="muted">Please sign in to view your orders.</p>');return;}
+    try { const snap=await db.collection("orders").where("customerId","==",currentUser.uid).get();
+      const rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+      $("#ordersList").html(rows.length?`<div class="table-wrap"><table><thead><tr><th>Order</th><th>Date</th><th>Items</th><th>Payment</th><th>Total</th><th>Status</th><th>Bill</th></tr></thead><tbody>${rows.map(o=>`<tr><td>${esc(o.id.slice(0,8))}</td><td>${moneyDate(o.createdAt)}</td><td>${o.items?.length||0}</td><td>${esc(o.paymentMethod)}</td><td>${money(o.total)}</td><td>${esc(o.status||"Placed")}</td><td><button class="btn btn-light bill-btn" data-id="${esc(o.id)}">View</button></td></tr>`).join("")}</tbody></table></div>`:'<div class="empty-state">No orders yet.</div>');
+    } catch(e){console.error(e);toast("Unable to load orders.");}
+  }
+  function showBill(order) {
+    const lines=(order.items||[]).map(i=>`${i.title} × ${i.qty} = ${money(i.price*i.qty)}`).join("\n");
+    const body=`SHOPSPHERE - BILL\nOrder: ${order.id}\nDate: ${moneyDate(order.createdAt)}\n\n${lines}\n\nTotal: ${money(order.total)}\nPayment: ${order.paymentMethod}`;
+    const w=window.open("","_blank"); if(!w){toast("Allow pop-ups to view the bill.");return;}
+    w.document.write(`<pre style="font:14px/1.7 monospace;white-space:pre-wrap;padding:30px">${esc(body)}</pre><button onclick="window.print()">Print bill</button>`);
+    w.document.close();
+  }
+
+  async function checkout() {
+    if(!currentUser){toast("Please sign in before checkout.");$("#authModal").removeAttr("hidden");return;}
+    if(!cart.length){toast("Your cart is empty.");return;}
+    const method=$("#paymentMethod").val();
+    try {
+      await db.runTransaction(async tx=>{
+        const userRef=db.collection("users").doc(currentUser.uid), userSnap=await tx.get(userRef);
+        if(!userSnap.exists)throw new Error("Customer profile was not found.");
+        const profile=userSnap.data(), total=cart.reduce((sum,i)=>sum+Number((getCartProduct(i.id)||i).price)*i.qty,0);
+        if(method==="credit" && (Number(profile.creditLimit||0)-Number(profile.creditUsed||0))<total)throw new Error("Insufficient available credit. Ask the administrator to increase your limit.");
+        const refs=cart.map(i=>({item:i,ref:db.collection("products").doc(i.id)}));
+        const snapshots=[]; for(const x of refs)snapshots.push(await tx.get(x.ref));
+        snapshots.forEach((snap,index)=>{if(!snap.exists||snap.data().active!==true||Number(snap.data().quantity)<refs[index].item.qty)throw new Error("A product is unavailable or stock has changed. Refresh and try again.");});
+        const orderRef=db.collection("orders").doc();
+        const orderItems=refs.map((x,i)=>{const p=snapshots[i].data();return {productId:x.item.id,title:p.title,price:Number(p.price),qty:x.item.qty};});
+        const amount=orderItems.reduce((s,i)=>s+i.price*i.qty,0);
+        refs.forEach((x,i)=>tx.update(x.ref,{quantity:firebase.firestore.FieldValue.increment(-x.item.qty),updatedAt:firebase.firestore.FieldValue.serverTimestamp()}));
+        if(method==="credit")tx.update(userRef,{creditUsed:firebase.firestore.FieldValue.increment(amount),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+        tx.set(orderRef,{customerId:currentUser.uid,customerName:profile.name||currentUser.email,customerEmail:currentUser.email,items:orderItems,total:amount,paymentMethod:method,status:"Placed",createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      });
+      cart=[];renderCart();$("#checkoutModal").attr("hidden",true);toast("Order placed successfully.");await loadProducts();await loadOrders();showPage("orders");
+    } catch(e){console.error(e);toast(e.message||"Checkout failed.");}
+  }
+
+  function authModal(mode) {
+    authMode=mode; $("#authTitle").text(mode==="signup"?"Create account":"Sign in"); $("#authSubmit").text(mode==="signup"?"Create account":"Sign in");
+    $("#nameField,#mobileField").prop("hidden",mode!=="signup");$("#toggleAuth").text(mode==="signup"?"Already have an account? Sign in":"Create an account");
+    $("#resetPassword").toggle(mode==="login");$("#authPassword").val("");$("#authModal").removeAttr("hidden");
+  }
+  async function handleAuth(e) {
+    e.preventDefault();if(!ready())return;
+    const email=$("#authEmail").val().trim(),password=$("#authPassword").val();
+    try {
+      if(authMode==="signup"){
+        const cred=await auth.createUserWithEmailAndPassword(email,password);
+        await db.collection("users").doc(cred.user.uid).set({name:$("#authName").val().trim(),email,mobile:$("#authMobile").val().trim(),role:"customer",creditLimit:0,creditUsed:0,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      } else await auth.signInWithEmailAndPassword(email,password);
+      $("#authModal").attr("hidden",true);toast("Welcome!");$("#authForm")[0].reset();
+    } catch(e){toast(e.message);}
+  }
+  async function onAuth(user) {
+    currentUser=user;currentProfile=null;isAdmin=false;
+    if(user){try{const doc=await db.collection("users").doc(user.uid).get();currentProfile=doc.exists?doc.data():{};isAdmin=currentProfile.role==="admin";}catch(e){console.error(e);}}
+    $("#userLabel").text(user?(currentProfile?.name||user.email):"Guest");$("#loginButton").prop("hidden",!!user);$("#logoutButton").prop("hidden",!user);$("#adminNav").prop("hidden",!isAdmin);
+    if(!user && !$("#adminPage").attr("hidden"))showPage("shop");
+    if(!user)$("#ordersList").html('<p class="muted">Sign in to view your orders.</p>');
+    if(isAdmin && !$("#adminPage").attr("hidden"))renderAdmin();
+    if(user)loadOrders();
+  }
 
   //Events
   $("nav a,.brand").on("click",function(e){e.preventDefault();const p=$(this).data("page");if(p==="admin"&&!isAdmin){toast("Administrator access required.");return;}if(p==="admin"){showPage("admin");renderAdmin();}else if(p==="orders"){showPage("orders");loadOrders();}else showPage("shop");});
