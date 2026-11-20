@@ -67,7 +67,13 @@ $(function () {
     $("#cartItems").html(cart.length?cart.map(item=>{const p=getCartProduct(item.id)||item;const line=Number(p.price)*item.qty;total+=line;return `<div class="cart-row"><div><h3>${esc(p.title)}</h3><small>${money(p.price)} each</small></div><div class="qty-control"><button class="qty-minus" data-id="${esc(item.id)}">−</button><b>${item.qty}</b><button class="qty-plus" data-id="${esc(item.id)}">+</button></div><strong>${money(line)}</strong><button class="btn btn-danger remove-cart" data-id="${esc(item.id)}">Remove</button></div>`}).join(""):'<div class="empty-state">Your cart is empty.</div>');
     $("#cartSubtotal").text(money(total)); $("#cartItemsCount").text(cart.reduce((a,x)=>a+x.qty,0));
   }
-
+  function addToCart(id) {
+    const p=products.find(x=>x.id===id); if(!p)return;
+    const found=cart.find(x=>x.id===id), next=(found?.qty||0)+1;
+    if(next>Number(p.quantity||0)){toast("Not enough stock available.");return;}
+    if(found)found.qty=next;else cart.push({id,qty:1,title:p.title,price:p.price});
+    renderCart();toast("Added to cart.");
+  }
 
   //Events
   $("nav a,.brand").on("click",function(e){e.preventDefault();const p=$(this).data("page");if(p==="admin"&&!isAdmin){toast("Administrator access required.");return;}if(p==="admin"){showPage("admin");renderAdmin();}else if(p==="orders"){showPage("orders");loadOrders();}else showPage("shop");});
