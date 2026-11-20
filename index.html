@@ -1,11 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Online Shopping application with customer and administrator portals">
+  <title>NovaMart | Online Shopping</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
-    
+    <header class="topbar">
+    <a class="brand" href="#" data-page="shop">NovaMart<span>.</span></a>
+    <nav id="mainNav">
+      <a href="#" data-page="shop" class="active">Shop</a>
+      <a href="#" data-page="orders">My orders</a>
+      <a href="#" data-page="admin" id="adminNav" hidden>Admin</a>
+    </nav>
+    <div class="top-actions">
+      <span id="userLabel" class="muted">Guest</span>
+      <button class="btn btn-light" id="cartButton">Cart <span id="cartCount">0</span></button>
+      <button class="btn btn-primary" id="loginButton">Sign in</button>
+      <button class="btn btn-light" id="logoutButton" hidden>Sign out</button>
+    </div>
+  </header>
+
+  
+  <footer><span>NovaMart</span><span>Online Shopping </span></footer>
+
+   <script src="shared/firebase-config.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
