@@ -62,6 +62,11 @@ $(function () {
       <small class="stock">${Number(p.quantity)>0?`${p.quantity} in stock`:"Out of stock"}</small></div></article>`).join(""):'<div class="empty-state">No products found. Add products in the Admin portal.</div>');
     $("#pageInfo").text(`Page ${productPage} of ${pages}`); $("#prevProducts").prop("disabled",productPage<=1); $("#nextProducts").prop("disabled",productPage>=pages);
   }
+  function renderCart() {
+    persistCart(); let total=0;
+    $("#cartItems").html(cart.length?cart.map(item=>{const p=getCartProduct(item.id)||item;const line=Number(p.price)*item.qty;total+=line;return `<div class="cart-row"><div><h3>${esc(p.title)}</h3><small>${money(p.price)} each</small></div><div class="qty-control"><button class="qty-minus" data-id="${esc(item.id)}">−</button><b>${item.qty}</b><button class="qty-plus" data-id="${esc(item.id)}">+</button></div><strong>${money(line)}</strong><button class="btn btn-danger remove-cart" data-id="${esc(item.id)}">Remove</button></div>`}).join(""):'<div class="empty-state">Your cart is empty.</div>');
+    $("#cartSubtotal").text(money(total)); $("#cartItemsCount").text(cart.reduce((a,x)=>a+x.qty,0));
+  }
 
 
   //Events
