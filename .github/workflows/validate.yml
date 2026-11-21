@@ -2,9 +2,9 @@ name: CI - Validate NovaMart
 
 on:
   push:
-    branches: [main, develop, 'feature/**', 'ci/**']
-  pull_request:
     branches: [main, develop]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
