@@ -1,53 +1,39 @@
-name: CI - Validate NovaMart
+name: Reusable validation
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
   validate:
-    name: HTML, CSS, JS and JSON
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install validation tools
         run: npm install --global htmlhint stylelint
-
       - name: Validate HTML
         run: htmlhint index.html --config .htmlhintrc
-
       - name: Validate CSS
-        run: stylelint "css/**/*.css" --config .stylelintrc.json
-
-      - name: Check JavaScript syntax
+        run: stylelint "css/**/*.css" --config .stylelintrc
+      - name: Check JavaScript
         shell: bash
         run: |
           set -euo pipefail
           while IFS= read -r -d '' file; do
             node --check "$file"
           done < <(find js shared seed -type f -name '*.js' ! -path '*/node_modules/*' -print0)
-
-      - name: Validate JSON files
+      - name: Validate JSON
         shell: bash
         run: |
           set -euo pipefail
           while IFS= read -r -d '' file; do
             node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$file"
           done < <(find seed -type f -name '*.json' ! -path '*/node_modules/*' ! -name 'serviceAccountKey.json' -print0)
-
       - name: Ensure no private credentials are committed
         shell: bash
         run: |
