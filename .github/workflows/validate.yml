@@ -1,0 +1,58 @@
+name: CI - Validate NovaMart
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'ci/**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: HTML, CSS, JS and JSON
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install validation tools
+        run: npm install --global htmlhint stylelint
+
+      - name: Validate HTML
+        run: htmlhint index.html --config .htmlhintrc
+
+      - name: Validate CSS
+        run: stylelint "css/**/*.css" --config .stylelintrc.json
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find js shared seed -type f -name '*.js' ! -path '*/node_modules/*' -print0)
+
+      - name: Validate JSON files
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$file"
+          done < <(find seed -type f -name '*.json' ! -path '*/node_modules/*' ! -name 'serviceAccountKey.json' -print0)
+
+      - name: Ensure no private credentials are committed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -Ei '(^|/)(serviceAccountKey\.json|\.env(\..*)?|.*\.pem|.*\.p12)$'; then
+            echo "Private credential file is tracked in Git."
+            exit 1
+          fi
